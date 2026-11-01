@@ -188,7 +188,7 @@ Shows tags that frequently appear together with the tag under your cursor, so yo
 - **Sorting**: the `Cos` / `Jac` / `Ovl` / `Frq` button in the header cycles between Danbooru's cosine similarity, Jaccard similarity, overlap coefficient and frequency. The percentage shown is the score for the active sort, followed by the tag's post count.
 - **Pin** (pin button): keeps the panel beside the text field while you keep typing. Tags you type get greyed out live.
 - **Data source**: lookups use Danbooru's related-tags endpoint and are made by the ComfyUI server (no browser CORS issues). Results are cached on disk in `data/related-tags/` (7 days by default). If Danbooru cannot be reached, an expired cache entry is shown instead; tags that were never fetched need an internet connection.
-- **HTTP 403 from Danbooru**: Danbooru may refuse anonymous lookups (login requirement or Cloudflare). Add your Danbooru username and an API key under *Settings -> Autocomplete++ -> Related Tags*; they are stored locally in `data/user_data.json` and sent only to Danbooru. The server console shows the first part of Danbooru's response to help diagnose it.
+- **Offline by default**: Danbooru's lookup is blocked by Cloudflare (HTTP 403), so with the default source `Auto` related tags are computed locally from a tag co-occurrence dataset (`newtextdoc1111/danbooru-tag-csv` on Hugging Face). It is downloaded once in the background to `data/danbooru_tags_cooccurrence.csv` (the panel shows a message meanwhile) and re-checked together with the tag list updates. No account is needed. `Danbooru` as source uses the live API instead (optionally with your username and API key); if Danbooru is blocked you will see an error.
 - LoRA, embedding and wildcard syntax is ignored. Weighted tags such as `(smile:1.2)` resolve to `smile`.
 
 ---
@@ -353,6 +353,7 @@ Access settings via the ComfyUI Settings Dialog under **Autocomplete++**:
 8. **Related Tags**:
     - `Enable Related Tags`: Toggle the feature on/off.
     - `Related Tags Trigger`: `Ctrl+Click` (default), `Click`, `Double-click` or `Hotkey only`.
+    - `Related Tags Source`: `Auto` / `Local` (offline co-occurrence data, default) or `Danbooru` (live API).
     - `Related Tags Sort`: `Cosine` (default), `Jaccard`, `Overlap` or `Frequency`.
     - `Max Related Tags`: Number of tags listed (5-100, default: 30).
     - `Related Tags Cache (Days)`: How long fetched results are reused (0 = never, default: 7).

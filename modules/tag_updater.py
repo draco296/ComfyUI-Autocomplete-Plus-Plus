@@ -28,6 +28,7 @@ from aiohttp import web
 import server
 
 from . import logger
+from . import cooccurrence
 from .api import DATA_DIR, TAGS_DIR, _read_user_data
 
 ARCHIVE_REPO = "DraconicDragon/dbr-e621-lists-archive"
@@ -298,6 +299,7 @@ def get_status():
         "last_check": state.get("last_check", 0),
         "last_error": state.get("last_error", ""),
         "sites": sites,
+        "related_data": cooccurrence.status(),
     }
 
 
@@ -321,6 +323,7 @@ async def route_update(request):
     if payload.get("e621"):
         sites.append("e621")
     result = await update_tag_lists(sites=sites, force=bool(payload.get("force")))
+    result["related_data"] = await cooccurrence.update_cooccurrence(force=bool(payload.get("force")))
     result["status"] = get_status()
     return web.json_response(result)
 
@@ -358,6 +361,7 @@ def _background_check():
         if settings.get("AutoUpdateE621", False):
             sites.append("e621")
         result = asyncio.run(update_tag_lists(sites=sites))
+        asyncio.run(cooccurrence.update_cooccurrence())
         if not result.get("success") and not result.get("busy"):
             problems = "; ".join(r.get("message", "") for r in result.get("results", {}).values() if r.get("message"))
             logger.warning(f"Automatic tag list update did not complete: {problems or 'unknown error'}")

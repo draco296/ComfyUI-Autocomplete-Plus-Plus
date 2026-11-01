@@ -23,12 +23,14 @@ from aiohttp import web
 import server
 
 from . import logger
+from . import cooccurrence
 from .api import DATA_DIR, _read_user_data
 
 CACHE_DIR = os.path.join(DATA_DIR, "related-tags")
 DANBOORU_URL = "https://danbooru.donmai.us/related_tag.json"
 USER_AGENT = "ComfyUI-Autocomplete-Plus-Plus (related tags)"
 ORDERS = ("Cosine", "Jaccard", "Overlap", "Frequency")
+SOURCES = ("Auto", "Local", "Danbooru")
 MAX_ITEMS = 300
 MAX_TAG_LENGTH = 200
 MEMORY_CACHE_LIMIT = 400
@@ -189,7 +191,7 @@ def describe_http_error(status, body, authenticated):
     if status in (401, 403):
         if cloudflare:
             return (f"Danbooru refused the request (HTTP {status}, Cloudflare protection). "
-                    "Adding your Danbooru username and API key in the settings may help.")
+                    "Set the related tags source to 'Auto' or 'Local data' to compute them offline.")
         if authenticated:
             return (f"Danbooru refused the request (HTTP {status}) even with your login - "
                     "check the username and API key in the settings.")
@@ -281,6 +283,34 @@ async def route_related_tags(request):
     except ValueError:
         ttl_days = 7.0
 
+    source = request.query.get("source", "Auto")
+    if source not in SOURCES:
+        source = "Auto"
+
+    if source in ("Auto", "Local"):
+        state, index = cooccurrence.ensure_index()
+        if state == "missing":
+            st = cooccurrence.read_state()
+            if source == "Auto" and st.get("last_error") and not cooccurrence.status()["downloading"]:
+                state = "fallback"
+            else:
+                cooccurrence.kick_download()
+                if cooccurrence.status()["downloading"] or not st.get("last_error"):
+                    state = "downloading"
+                else:
+                    return web.json_response({"success": False, "tag": tag, "order": order,
+                                              "error": "Related tags data could not be downloaded: "
+                                                       + st["last_error"]})
+        if state == "error":
+            return web.json_response({"success": False, "tag": tag, "order": order,
+                                      "error": "Related tags data could not be read"})
+        if state in ("building", "downloading"):
+            return web.json_response({"success": True, "pending": state, "tag": tag, "order": order, "items": []})
+        if state == "ready":
+            items = await asyncio.get_running_loop().run_in_executor(None, index.lookup, tag, order)
+            return web.json_response({"success": True, "tag": tag, "order": order, "source": "local",
+                                      "cached": False, "stale": False, "items": items})
+
     try:
         payload, flags = await get_related(tag, order, ttl_days)
     except Exception as e:
@@ -292,6 +322,7 @@ async def route_related_tags(request):
         "success": True,
         "tag": tag,
         "order": order,
+        "source": "danbooru",
         "fetched_at": payload.get("fetched_at"),
         "cached": flags["cached"],
         "stale": flags["stale"],

@@ -404,11 +404,13 @@ export class RelatedTagsPanel {
         if (hit && Date.now() - hit.t < MEMO_TTL_MS) return hit.data;
 
         const ttl = Number.isFinite(Number(settingValues.relatedTagsCacheDays)) ? Number(settingValues.relatedTagsCacheDays) : 7;
-        const url = `${API_URL}?tag=${encodeURIComponent(tag)}&order=${encodeURIComponent(order)}&ttl_days=${encodeURIComponent(ttl)}`;
+        const source = ["Auto", "Local", "Danbooru"].includes(settingValues.relatedTagsSource) ? settingValues.relatedTagsSource : "Auto";
+        const url = `${API_URL}?tag=${encodeURIComponent(tag)}&order=${encodeURIComponent(order)}&ttl_days=${encodeURIComponent(ttl)}&source=${source}`;
         const res = await fetch(url);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
         if (!data || !data.success) throw new Error((data && data.error) || "unknown error");
+        if (data.pending) return data;
         this.memo.set(key, { t: Date.now(), data });
         if (this.memo.size > 100) this.memo.delete(this.memo.keys().next().value);
         return data;
@@ -428,6 +430,17 @@ export class RelatedTagsPanel {
         try {
             const data = await this.fetchRelated(tag, order);
             if (reqId !== this.requestId) return;
+            if (data.pending) {
+                this.setStatus(data.pending === "downloading"
+                    ? "Downloading related tags data (one-time, runs in the background)…"
+                    : "Preparing related tags data…");
+                this.position();
+                clearTimeout(this.pendingTimer);
+                this.pendingTimer = setTimeout(() => {
+                    if (reqId === this.requestId && this.visible) this.load();
+                }, 3000);
+                return;
+            }
             this.items = Array.isArray(data.items) ? data.items : [];
             this.render(data);
         } catch (err) {

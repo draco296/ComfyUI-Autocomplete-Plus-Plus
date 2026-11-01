@@ -52,6 +52,7 @@ export const settingValues = {
     enableRelatedTags: true,
     relatedTagsTrigger: "Ctrl+Click",
     relatedTagsSort: "Cosine",
+    relatedTagsSource: "Auto",
     maxRelatedTags: 30,
     relatedTagsCacheDays: 7,
     autoUpdateTags: true,
@@ -206,6 +207,7 @@ try {
     settingValues.enableRelatedTags = loadSetting("EnableRelatedTags", true);
     settingValues.relatedTagsTrigger = loadSetting("RelatedTagsTrigger", "Ctrl+Click");
     settingValues.relatedTagsSort = loadSetting("RelatedTagsSort", "Cosine");
+    settingValues.relatedTagsSource = loadSetting("RelatedTagsSource", "Auto");
     settingValues.maxRelatedTags = loadSetting("MaxRelatedTags", 30, true);
     settingValues.relatedTagsCacheDays = loadSetting("RelatedTagsCacheDays", 7, true);
     settingValues.autoUpdateTags = loadSetting("AutoUpdateTags", true);
@@ -1686,6 +1688,20 @@ export function registerSettings(app) {
         onChange: (newVal) => {
             settingValues.relatedTagsTrigger = newVal || "Ctrl+Click";
             persistSetting("RelatedTagsTrigger", settingValues.relatedTagsTrigger);
+        }
+    });
+
+    app.ui.settings.addSetting({
+        id: id + ".RelatedTagsSource",
+        name: "Related Tags Source",
+        tooltip: "Auto / Local data: computed offline from a co-occurrence dataset (downloaded once, ~background). Danbooru API: live lookup, usually blocked by Cloudflare.",
+        type: "combo",
+        options: ["Auto", "Local", "Danbooru"],
+        defaultValue: settingValues.relatedTagsSource,
+        category: [name, "Related Tags", "Related Tags Source"],
+        onChange: (newVal) => {
+            settingValues.relatedTagsSource = newVal || "Auto";
+            persistSetting("RelatedTagsSource", settingValues.relatedTagsSource);
         }
     });
 

@@ -723,6 +723,7 @@ export class TagCompleteEngine {
                 "EnableRelatedTags": settingValues.enableRelatedTags,
                 "RelatedTagsTrigger": settingValues.relatedTagsTrigger,
                 "RelatedTagsSort": settingValues.relatedTagsSort,
+                "RelatedTagsSource": settingValues.relatedTagsSource,
                 "MaxRelatedTags": settingValues.maxRelatedTags,
                 "RelatedTagsCacheDays": settingValues.relatedTagsCacheDays,
                 "AutoUpdateTags": settingValues.autoUpdateTags,
