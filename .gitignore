@@ -11,6 +11,11 @@ data/user_data.json
 data/*.tmp
 !data/.gitkeep
 
+# Auto-updated tag lists, update state and related-tags cache
+data/*.csv
+data/tag_update_state.json
+data/related-tags/
+
 # wildcards & translation csv
 tags/translations/*
 tags/wildcards/*

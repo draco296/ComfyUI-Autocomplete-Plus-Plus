@@ -719,7 +719,15 @@ export class TagCompleteEngine {
                 "EnableHotkeyEnhance": settingValues.enableHotkeyEnhance,
                 "EnableTagWeightHotkey": settingValues.enableTagWeightHotkey,
                 "EnableTagJumpHotkey": settingValues.enableTagJumpHotkey,
-                "EnableTagSwapHotkey": settingValues.enableTagSwapHotkey
+                "EnableTagSwapHotkey": settingValues.enableTagSwapHotkey,
+                "EnableRelatedTags": settingValues.enableRelatedTags,
+                "RelatedTagsTrigger": settingValues.relatedTagsTrigger,
+                "RelatedTagsSort": settingValues.relatedTagsSort,
+                "MaxRelatedTags": settingValues.maxRelatedTags,
+                "RelatedTagsCacheDays": settingValues.relatedTagsCacheDays,
+                "AutoUpdateTags": settingValues.autoUpdateTags,
+                "AutoUpdateIntervalDays": settingValues.autoUpdateIntervalDays,
+                "AutoUpdateE621": settingValues.autoUpdateE621
             };
 
             const serverHasSettings = serverSettings && Object.keys(serverSettings).length > 0;
@@ -1030,6 +1038,12 @@ export class TagCompleteEngine {
     bindGlobalEvents() {
         window.addEventListener("tagcomplete-reload-tags", () => {
             this.loadAllData();
+        });
+
+        // A newer tag list was downloaded (or reverted): drop the in-memory CSV cache and reload everything
+        window.addEventListener("tagcomplete-tags-updated", () => {
+            csvCache.clear();
+            this.loadAllData(true);
         });
 
         // Hide info popover when scrolling dropdown list or wheeling

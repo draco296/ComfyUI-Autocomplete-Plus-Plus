@@ -7,12 +7,18 @@ import { setupPromptExpansionInterceptor } from "./prompt-expander.js";
 import { attachHotkeysToTextarea } from "./hotkeys.js";
 import { setupDictionariesControllerComponent, setupDictionariesControllerNodeHooks, isDictionariesControllerTextarea } from "./dictionaries-controller.js";
 import { refreshCivitaiHost, fetchLMSyntaxFormat } from "./lora-manager-provider.js";
+import { RelatedTagsPanel } from "./related-tags.js";
 
 const extensionId = "ComfyUI.AutocompletePlusPlus";
 const extensionName = "Autocomplete++";
 
 const attachedElements = new WeakSet();
 let engine = null;
+let relatedTags = null;
+
+export function getRelatedTagsPanel() {
+    return relatedTags;
+}
 
 export function getTagCompleteEngine() {
     return engine;
@@ -446,6 +452,7 @@ function attachListenersToTextarea(element) {
         document.body.classList.remove("ac-node-override-active");
         element.removeAttribute("data-ac-override");
         if (engine) engine.handleBlur();
+        if (relatedTags) relatedTags.handleBlur();
         if (!isExcludedTarget(element) && !element.readOnly && !element.disabled) {
             formatTextareaOnBlur(element, settingValues);
         }
@@ -461,6 +468,11 @@ function attachListenersToTextarea(element) {
             if (key === "Tab" || key === "Enter" || key === "ArrowUp" || key === "ArrowDown" || key === "Escape" || key === "PageUp" || key === "PageDown") {
                 e.stopImmediatePropagation();
             }
+        }
+        if (relatedTags && relatedTags.handleKeyDown(e, e.target)) {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            return;
         }
         if (engine) engine.handleKeyDown(e);
     }, true);
@@ -478,6 +490,7 @@ function attachListenersToTextarea(element) {
             syncWidgetValue(e.target);
         }
 
+        if (relatedTags) relatedTags.handleInput();
         if (engine) engine.handleInput(e);
     }, true);
 
@@ -489,14 +502,21 @@ function attachListenersToTextarea(element) {
         if (engine) engine.handleKeyUp(e);
     }, true);
 
-    element.addEventListener("click", () => {
+    element.addEventListener("click", (e) => {
         if (isExcludedTarget(element)) {
             if (engine) engine.hide();
+            if (relatedTags) relatedTags.hide();
             return;
         }
+        if (relatedTags && relatedTags.handleClick(e, element)) return;
         if (engine && engine.isVisible) {
             engine.updatePosition();
         }
+    });
+
+    element.addEventListener("dblclick", (e) => {
+        if (isExcludedTarget(element)) return;
+        if (relatedTags) relatedTags.handleDoubleClick(e, element);
     });
 }
 
@@ -759,6 +779,13 @@ app.registerExtension({
 
         engine = new TagCompleteEngine();
         if (typeof window !== "undefined") window.tagCompleteEngine = engine;
+        relatedTags = new RelatedTagsPanel(() => engine);
+        window.addEventListener("tagcomplete-related-tags-toggled", (ev) => {
+            if (relatedTags && ev.detail === false) relatedTags.hide();
+        });
+        window.addEventListener("tagcomplete-related-tags-cache-cleared", () => {
+            if (relatedTags) relatedTags.memo.clear();
+        });
         await engine.loadAllData();
 
         initializeDOMObserver();

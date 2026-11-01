@@ -16,7 +16,7 @@ Tag autocomplete, prompt formatting, and dynamic prompt expansion extension for 
 
 ## Overview
 
-**Autocomplete++** provides tag autocomplete, LoRA/embedding suggestions, dynamic prompt and wildcard expansion, auto-formatting, and editing shortcuts for text inputs in ComfyUI. It supports both ComfyUI Node 2.0 and the classic LiteGraph UI.
+**Autocomplete++** provides tag autocomplete, related tags, automatic tag list updates, LoRA/embedding suggestions, dynamic prompt and wildcard expansion, auto-formatting, and editing shortcuts for text inputs in ComfyUI. It supports both ComfyUI Node 2.0 and the classic LiteGraph UI.
 
 This project is built upon and refactored from [ComfyUI-Autocomplete-Plus](https://github.com/newtextdoc1111/ComfyUI-Autocomplete-Plus) by [newtextdoc1111](https://github.com/newtextdoc1111).
 
@@ -178,6 +178,34 @@ Autocomplete++ provides 4 optional standalone controller nodes located under the
 
 ---
 
+### 8. Related Tags
+
+Shows tags that frequently appear together with the tag under your cursor, so you can build a prompt from a few seed tags.
+
+- **Open it**: `Ctrl + Click` on a tag (configurable: `Click`, `Double-click` or hotkey only), or press `Ctrl + Shift + Space` with the cursor in a tag. `Esc` closes it.
+- **Insert**: click a suggestion (or `Up` / `Down` + `Enter`). The tag is inserted right after the source tag using the same rules as normal autocomplete (underscore replacement, parenthesis escaping, auto comma, Anima `@` prefix for artists). The panel stays open, so you can add several tags in a row; the next one goes after the previous one.
+- **Already in the prompt**: such tags are struck through and greyed out; clicking one selects it in the prompt instead of adding a duplicate.
+- **Sorting**: the `Cos` / `Jac` / `Ovl` / `Frq` button in the header cycles between Danbooru's cosine similarity, Jaccard similarity, overlap coefficient and frequency. The percentage shown is the score for the active sort, followed by the tag's post count.
+- **Pin** (pin button): keeps the panel beside the text field while you keep typing. Tags you type get greyed out live.
+- **Data source**: lookups use Danbooru's related-tags endpoint and are made by the ComfyUI server (no browser CORS issues). Results are cached on disk in `data/related-tags/` (7 days by default). If Danbooru cannot be reached, an expired cache entry is shown instead; tags that were never fetched need an internet connection.
+- **HTTP 403 from Danbooru**: Danbooru may refuse anonymous lookups (login requirement or Cloudflare). Add your Danbooru username and an API key under *Settings -> Autocomplete++ -> Related Tags*; they are stored locally in `data/user_data.json` and sent only to Danbooru. The server console shows the first part of Danbooru's response to help diagnose it.
+- LoRA, embedding and wildcard syntax is ignored. Weighted tags such as `(smile:1.2)` resolve to `smile`.
+
+---
+
+### 9. Automatic Tag List Updates
+
+The extension ships with a Danbooru and an e621 tag list. With **Auto-Update Tag Lists** enabled (default), a background check runs a short while after ComfyUI starts (at most once per *Tag Update Check Interval*, default 7 days) and downloads a newer list if one exists.
+
+- **Source**: the public-domain [dbr-e621-lists-archive](https://github.com/DraconicDragon/dbr-e621-lists-archive). It is committed roughly once per quarter, so "latest" means the newest archive snapshot, not a live dump of Danbooru.
+- **Safe by design**: the downloaded file is validated (row count, column format, no sudden shrink) before it replaces anything and the swap is atomic. A failed or invalid download keeps your current list. The files in `tags/` are never modified, so `git pull` / ComfyUI-Manager updates stay clean.
+- **How it is used**: the update is stored as `data/danbooru_latest.csv` (and `data/e621_latest.csv`) and is served in place of `danbooru.csv` / `e621.csv`. Nothing needs to be reconfigured in the dictionary settings.
+- **Update now**: *Settings -> Autocomplete++ -> Tags & Dictionaries -> Update Tag Lists Now* checks immediately and reloads the list without restarting ComfyUI. It also shows which version is in use.
+- **Revert**: *Revert to Bundled Tag Lists* deletes the `*_latest.csv` files.
+- The e621 list is only updated if *Also Update e621 Tag List* is enabled.
+
+---
+
 ## Keyboard Shortcuts Reference
 
 | Shortcut                             | Context                                    | Action                                                  |
@@ -194,6 +222,9 @@ Autocomplete++ provides 4 optional standalone controller nodes located under the
 | **`Ctrl + Up / Down`**               | Textarea                                   | Adjust weight of tag, embedding, or LoRA at cursor      |
 | **`Ctrl + Left / Right`**            | Textarea                                   | Jump cursor across tag ends                             |
 | **`Alt + Left / Right`**             | Textarea                                   | Swap tag with neighbor                                  |
+| **`Ctrl + Shift + Space`**           | Textarea                                   | Open / close Related Tags for the tag at the cursor     |
+| **`Up`** / **`Down`** / **`Enter`**  | Related Tags panel open                    | Navigate / insert a related tag                         |
+| **`Esc`**                            | Related Tags panel open                    | Close the panel (also when pinned)                      |
 
 ---
 
@@ -310,11 +341,23 @@ Access settings via the ComfyUI Settings Dialog under **Autocomplete++**:
     - `Main Tag File`: Primary tag CSV file loaded from `tags/`.
     - `Extra Tag Files`: Multi-select dropdown for loading additional tag CSV dictionaries.
     - `Translation File`: Selects translation CSV file loaded from `tags/translations/`.
+    - `Auto-Update Tag Lists`: Download a newer Danbooru list in the background at startup (default: on).
+    - `Tag Update Check Interval (Days)`: Minimum days between automatic checks (default: 7).
+    - `Also Update e621 Tag List`: Include the e621 list in automatic updates (default: off).
+    - `Update Tag Lists Now`: Check and apply a newer list immediately; shows the version in use.
+    - `Revert to Bundled Tag Lists`: Remove the auto-updated lists.
 7. **Translation**:
     - `Search by Translation`: Allows searching tags by their translated names.
     - `Show Translations in Suggestions`: Displays translated names next to English tags in suggestions.
     - `Old 3-column format`: Compatibility toggle for legacy 3-column translation CSVs.
-8. **Wildcards & Dynamic Prompts**:
+8. **Related Tags**:
+    - `Enable Related Tags`: Toggle the feature on/off.
+    - `Related Tags Trigger`: `Ctrl+Click` (default), `Click`, `Double-click` or `Hotkey only`.
+    - `Related Tags Sort`: `Cosine` (default), `Jaccard`, `Overlap` or `Frequency`.
+    - `Max Related Tags`: Number of tags listed (5-100, default: 30).
+    - `Related Tags Cache (Days)`: How long fetched results are reused (0 = never, default: 7).
+    - `Clear Related Tags Cache`: Delete all cached results.
+9. **Wildcards & Dynamic Prompts**:
     - `Enable Prompt Expansion Engine`: Toggle prompt expansion engine on/off.
     - `Wildcards Mode`: Controls wildcard sampling behavior (`Random`, `Follow Seed`, `Keep Last Choice`, `Sequential`).
     - `Dynamic Prompts Mode`: Controls dynamic prompt choices behavior (`Random`, `Follow Seed`, `Keep Last Choice`).

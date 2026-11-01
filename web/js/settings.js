@@ -49,6 +49,16 @@ export const settingValues = {
     tagWeightStep: 0.05,
     loraWeightStep: 0.05,
     enableConsoleDebugLogs: false,
+    enableRelatedTags: true,
+    relatedTagsTrigger: "Ctrl+Click",
+    relatedTagsSort: "Cosine",
+    maxRelatedTags: 30,
+    relatedTagsCacheDays: 7,
+    autoUpdateTags: true,
+    autoUpdateIntervalDays: 7,
+    autoUpdateE621: false,
+    danbooruUsername: "",
+    danbooruApiKey: "",
 };
 
 // Persisted setting loader from localStorage
@@ -193,6 +203,16 @@ try {
     settingValues.tagWeightStep = loadSetting("TagWeightStep", 0.05, true);
     settingValues.loraWeightStep = loadSetting("LoraWeightStep", 0.05, true);
     settingValues.enableConsoleDebugLogs = loadSetting("EnableConsoleDebugLogs", false);
+    settingValues.enableRelatedTags = loadSetting("EnableRelatedTags", true);
+    settingValues.relatedTagsTrigger = loadSetting("RelatedTagsTrigger", "Ctrl+Click");
+    settingValues.relatedTagsSort = loadSetting("RelatedTagsSort", "Cosine");
+    settingValues.maxRelatedTags = loadSetting("MaxRelatedTags", 30, true);
+    settingValues.relatedTagsCacheDays = loadSetting("RelatedTagsCacheDays", 7, true);
+    settingValues.autoUpdateTags = loadSetting("AutoUpdateTags", true);
+    settingValues.autoUpdateIntervalDays = loadSetting("AutoUpdateIntervalDays", 7, true);
+    settingValues.autoUpdateE621 = loadSetting("AutoUpdateE621", false);
+    settingValues.danbooruUsername = loadSetting("DanbooruUsername", "");
+    settingValues.danbooruApiKey = loadSetting("DanbooruApiKey", "");
 } catch (_) {}
 
 export let availableTagFiles = [];
@@ -297,6 +317,74 @@ function createConfirmButton(defaultText, confirmPrefix, doneText, onConfirm) {
     });
 
     return btn;
+}
+
+// Neutral (non-destructive) action button used by the tag update / related tags settings.
+function createActionButton(label, onClick, statusEl = null) {
+    const wrap = document.createElement("div");
+    wrap.style.display = "flex";
+    wrap.style.flexDirection = "column";
+    wrap.style.gap = "6px";
+    wrap.style.alignItems = "flex-start";
+    wrap.style.maxWidth = "360px";
+
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "p-button p-component text-sm font-medium transition-all rounded-md px-3 py-1.5 border";
+    btn.style.cursor = "pointer";
+    btn.style.fontSize = "12px";
+    btn.style.lineHeight = "1.4";
+    btn.textContent = label;
+
+    const status = statusEl || document.createElement("div");
+    status.className = "text-sm text-muted";
+    status.style.fontSize = "12px";
+    status.style.whiteSpace = "pre-wrap";
+
+    btn.addEventListener("click", async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (btn.disabled) return;
+        btn.disabled = true;
+        btn.style.opacity = "0.6";
+        try {
+            await onClick(status);
+        } catch (err) {
+            status.textContent = "Failed: " + (err && err.message ? err.message : err);
+        } finally {
+            btn.disabled = false;
+            btn.style.opacity = "";
+        }
+    });
+
+    wrap.append(btn, status);
+    return { wrap, btn, status };
+}
+
+function describeTagStatus(st) {
+    if (!st || !st.sites) return "";
+    const d = st.sites.danbooru || {};
+    const parts = [];
+    parts.push(d.using_latest
+        ? `Danbooru list: ${d.version || "updated"} (${(d.rows || 0).toLocaleString()} tags)`
+        : "Danbooru list: bundled with the extension");
+    const e = st.sites.e621 || {};
+    if (e.using_latest) parts.push(`e621 list: ${e.version || "updated"} (${(e.rows || 0).toLocaleString()} tags)`);
+    if (st.last_check) parts.push("Last check: " + new Date(st.last_check * 1000).toLocaleString());
+    if (st.last_error) parts.push("Last problem: " + st.last_error);
+    return parts.join("\n");
+}
+
+function summarizeUpdate(result) {
+    if (!result) return "No response from the server.";
+    if (result.busy) return "An update is already running - try again in a moment.";
+    const lines = [];
+    for (const [site, r] of Object.entries(result.results || {})) {
+        if (r.status === "updated") lines.push(`${site}: updated to ${r.version} (${(r.rows || 0).toLocaleString()} tags)`);
+        else if (r.status === "up_to_date") lines.push(`${site}: already up to date (${r.version})`);
+        else lines.push(`${site}: ${r.message || "failed"}`);
+    }
+    return lines.join("\n") || "Nothing to update.";
 }
 
 function createToggleSwitch(initialChecked, onChange) {
@@ -1570,5 +1658,215 @@ export function registerSettings(app) {
             persistSetting("EnableHotkeyEnhance", checked);
             window.dispatchEvent(new CustomEvent("autocomplete-hotkeys-toggled", { detail: checked }));
         }
+    });
+
+    // ----- Related Tags ------------------------------------------------------
+    app.ui.settings.addSetting({
+        id: id + ".EnableRelatedTags",
+        name: "Enable Related Tags",
+        tooltip: "Show tags that frequently appear together with the tag under the cursor (data from Danbooru, cached locally). Needs internet access for tags that are not cached yet.",
+        type: "boolean",
+        defaultValue: settingValues.enableRelatedTags,
+        category: [name, "Related Tags", "Enable Related Tags"],
+        onChange: (newVal) => {
+            settingValues.enableRelatedTags = !!newVal;
+            persistSetting("EnableRelatedTags", settingValues.enableRelatedTags);
+            window.dispatchEvent(new CustomEvent("tagcomplete-related-tags-toggled", { detail: settingValues.enableRelatedTags }));
+        }
+    });
+
+    app.ui.settings.addSetting({
+        id: id + ".RelatedTagsTrigger",
+        name: "Related Tags Trigger",
+        tooltip: "How the related tags panel is opened for a tag. Ctrl+Shift+Space always opens it for the tag at the cursor.",
+        type: "combo",
+        options: ["Ctrl+Click", "Click", "Double-click", "Hotkey only"],
+        defaultValue: settingValues.relatedTagsTrigger,
+        category: [name, "Related Tags", "Related Tags Trigger"],
+        onChange: (newVal) => {
+            settingValues.relatedTagsTrigger = newVal || "Ctrl+Click";
+            persistSetting("RelatedTagsTrigger", settingValues.relatedTagsTrigger);
+        }
+    });
+
+    app.ui.settings.addSetting({
+        id: id + ".RelatedTagsSort",
+        name: "Related Tags Sort",
+        tooltip: "Cosine / Jaccard / Overlap / Frequency, as defined by Danbooru's related tags. Can also be cycled with the button in the panel header.",
+        type: "combo",
+        options: ["Cosine", "Jaccard", "Overlap", "Frequency"],
+        defaultValue: settingValues.relatedTagsSort,
+        category: [name, "Related Tags", "Related Tags Sort"],
+        onChange: (newVal) => {
+            settingValues.relatedTagsSort = newVal || "Cosine";
+            persistSetting("RelatedTagsSort", settingValues.relatedTagsSort);
+        }
+    });
+
+    app.ui.settings.addSetting({
+        id: id + ".MaxRelatedTags",
+        name: "Max Related Tags",
+        tooltip: "Maximum number of related tags to list (5 - 100).",
+        type: "slider",
+        attrs: { min: 5, max: 100, step: 5 },
+        defaultValue: settingValues.maxRelatedTags,
+        category: [name, "Related Tags", "Max Related Tags"],
+        onChange: (newVal) => {
+            settingValues.maxRelatedTags = Number(newVal) || 30;
+            persistSetting("MaxRelatedTags", settingValues.maxRelatedTags);
+        }
+    });
+
+    app.ui.settings.addSetting({
+        id: id + ".RelatedTagsCacheDays",
+        name: "Related Tags Cache (Days)",
+        tooltip: "How long fetched related tags are reused before they are requested from Danbooru again (0 = never cache).",
+        type: "slider",
+        attrs: { min: 0, max: 30, step: 1 },
+        defaultValue: settingValues.relatedTagsCacheDays,
+        category: [name, "Related Tags", "Related Tags Cache (Days)"],
+        onChange: (newVal) => {
+            const n = Number(newVal);
+            settingValues.relatedTagsCacheDays = Number.isFinite(n) ? n : 7;
+            persistSetting("RelatedTagsCacheDays", settingValues.relatedTagsCacheDays);
+        }
+    });
+
+    const makeCredentialInput = (key, settingKey, placeholder, secret) => () => {
+        const input = document.createElement("input");
+        input.type = secret ? "password" : "text";
+        input.autocomplete = "off";
+        input.spellcheck = false;
+        input.placeholder = placeholder;
+        input.value = settingValues[key] || "";
+        input.className = "w-full rounded-md border border-interface-stroke bg-base-background p-2 text-sm text-muted focus-visible:outline-none";
+        input.style.minWidth = "220px";
+        input.addEventListener("change", () => {
+            settingValues[key] = input.value.trim();
+            persistSetting(settingKey, settingValues[key]);
+        });
+        return input;
+    };
+
+    app.ui.settings.addSetting({
+        id: id + ".DanbooruUsername",
+        name: "Danbooru Username (optional)",
+        tooltip: "Only needed if Related Tags fail with HTTP 403. Used together with the API key to log in to Danbooru when fetching related tags.",
+        type: makeCredentialInput("danbooruUsername", "DanbooruUsername", "Danbooru username", false),
+        defaultValue: "",
+        category: [name, "Related Tags", "Danbooru Username (optional)"]
+    });
+
+    app.ui.settings.addSetting({
+        id: id + ".DanbooruApiKey",
+        name: "Danbooru API Key (optional)",
+        tooltip: "Create one at danbooru.donmai.us > your profile > API Keys (the 'posts' / 'tags' read permission is enough). It is stored only in this extension's local data/user_data.json and sent only to Danbooru.",
+        type: makeCredentialInput("danbooruApiKey", "DanbooruApiKey", "API key", true),
+        defaultValue: "",
+        category: [name, "Related Tags", "Danbooru API Key (optional)"]
+    });
+
+    app.ui.settings.addSetting({
+        id: id + ".ClearRelatedTagsCache",
+        name: "Clear Related Tags Cache",
+        tooltip: "Delete all cached related tags so they are fetched fresh next time.",
+        type: () => {
+            const { wrap } = createActionButton("Clear Related Tags Cache", async (status) => {
+                const res = await fetch("/autocomplete-plus-plus/related-tags/clear-cache", { method: "POST" });
+                const data = await res.json();
+                window.dispatchEvent(new CustomEvent("tagcomplete-related-tags-cache-cleared"));
+                status.textContent = data && data.success ? `Cleared ${data.removed} cached entries.` : "Could not clear the cache.";
+            });
+            return wrap;
+        },
+        defaultValue: "",
+        category: [name, "Related Tags", "Clear Related Tags Cache"]
+    });
+
+    // ----- Automatic tag list updates -----------------------------------------
+    app.ui.settings.addSetting({
+        id: id + ".AutoUpdateTags",
+        name: "Auto-Update Tag Lists",
+        tooltip: "Periodically download a newer Danbooru tag list (from the public dbr-e621-lists-archive) in the background when ComfyUI starts. The bundled lists are never modified; a failed or invalid download keeps your current list. Takes effect after the next ComfyUI restart.",
+        type: "boolean",
+        defaultValue: settingValues.autoUpdateTags,
+        category: [name, "Tags & Dictionaries", "Auto-Update Tag Lists"],
+        onChange: (newVal) => {
+            settingValues.autoUpdateTags = !!newVal;
+            persistSetting("AutoUpdateTags", settingValues.autoUpdateTags);
+        }
+    });
+
+    app.ui.settings.addSetting({
+        id: id + ".AutoUpdateIntervalDays",
+        name: "Tag Update Check Interval (Days)",
+        tooltip: "Minimum number of days between automatic update checks.",
+        type: "slider",
+        attrs: { min: 1, max: 60, step: 1 },
+        defaultValue: settingValues.autoUpdateIntervalDays,
+        category: [name, "Tags & Dictionaries", "Tag Update Check Interval (Days)"],
+        onChange: (newVal) => {
+            settingValues.autoUpdateIntervalDays = Number(newVal) || 7;
+            persistSetting("AutoUpdateIntervalDays", settingValues.autoUpdateIntervalDays);
+        }
+    });
+
+    app.ui.settings.addSetting({
+        id: id + ".AutoUpdateE621",
+        name: "Also Update e621 Tag List",
+        tooltip: "Include the e621 list in automatic updates (the Danbooru list is always included).",
+        type: "boolean",
+        defaultValue: settingValues.autoUpdateE621,
+        category: [name, "Tags & Dictionaries", "Also Update e621 Tag List"],
+        onChange: (newVal) => {
+            settingValues.autoUpdateE621 = !!newVal;
+            persistSetting("AutoUpdateE621", settingValues.autoUpdateE621);
+        }
+    });
+
+    app.ui.settings.addSetting({
+        id: id + ".UpdateTagsNow",
+        name: "Update Tag Lists Now",
+        tooltip: "Check the archive for a newer list right now and load it without restarting ComfyUI.",
+        type: () => {
+            const statusEl = document.createElement("div");
+            const { wrap, status } = createActionButton("Update Tag Lists Now", async (st) => {
+                st.textContent = "Checking for a newer list\u2026";
+                const res = await fetch("/autocomplete-plus-plus/tags/update", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ e621: !!settingValues.autoUpdateE621 })
+                });
+                const data = await res.json();
+                const changed = Object.values(data.results || {}).some((r) => r.status === "updated");
+                st.textContent = summarizeUpdate(data) + (data.status ? "\n\n" + describeTagStatus(data.status) : "");
+                if (changed) window.dispatchEvent(new CustomEvent("tagcomplete-tags-updated"));
+            }, statusEl);
+            fetch("/autocomplete-plus-plus/tags/update-status")
+                .then((r) => r.json())
+                .then((d) => { if (!status.textContent) status.textContent = describeTagStatus(d); })
+                .catch(() => {});
+            return wrap;
+        },
+        defaultValue: "",
+        category: [name, "Tags & Dictionaries", "Update Tag Lists Now"]
+    });
+
+    app.ui.settings.addSetting({
+        id: id + ".RevertTagLists",
+        name: "Revert to Bundled Tag Lists",
+        tooltip: "Delete the auto-updated lists and use the lists shipped with the extension again. (Click twice within 3 seconds to confirm)",
+        type: () => createConfirmButton(
+            "Revert to Bundled Lists",
+            "Confirm Revert?",
+            "Reverted!",
+            () => {
+                fetch("/autocomplete-plus-plus/tags/revert", { method: "POST" })
+                    .then(() => window.dispatchEvent(new CustomEvent("tagcomplete-tags-updated")))
+                    .catch(() => {});
+            }
+        ),
+        defaultValue: "",
+        category: [name, "Tags & Dictionaries", "Revert to Bundled Tag Lists"]
     });
 }

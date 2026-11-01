@@ -1,5 +1,10 @@
 from .modules.api import *
 from .modules import logger
+from .modules import related_tags as _related_tags  # registers /related-tags routes
+from .modules import tag_updater as _tag_updater    # registers /tags/update routes
+
+# Deferred, non-blocking check for newer tag lists (see Settings -> Autocomplete++ -> Tags & Dictionaries)
+_tag_updater.start_background_check()
 
 logger.info("ComfyUI-Autocomplete-Plus-Plus initialized successfully.")
 

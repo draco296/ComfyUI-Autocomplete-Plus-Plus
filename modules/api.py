@@ -87,11 +87,39 @@ def resolve_contained_file(base_dir, subpath, allowed_exts=None):
     return None
 
 
+# Bundled tag lists that are transparently replaced by an auto-updated copy.
+# The updater (modules/tag_updater.py) writes the fresh lists to data/ so the
+# git-tracked files in tags/ are never modified (keeps `git pull` clean).
+# Deleting data/<name>_latest.csv reverts to the bundled list.
+LATEST_OVERLAYS = {
+    "danbooru.csv": "danbooru_latest.csv",
+    "e621.csv": "e621_latest.csv",
+}
+
+
+def resolve_latest_overlay(clean_name):
+    overlay = LATEST_OVERLAYS.get(str(clean_name).lower())
+    if not overlay:
+        return None
+    candidate = os.path.join(DATA_DIR, overlay)
+    try:
+        if os.path.isfile(candidate) and os.path.getsize(candidate) > 0:
+            return candidate
+    except OSError:
+        pass
+    return None
+
+
 def find_file_path(filename):
     if not filename:
         return None
 
     clean_name = str(filename).replace("\\", "/").strip()
+
+    overlay = resolve_latest_overlay(clean_name)
+    if overlay:
+        return overlay
+
     allowed_dirs = [TRANSLATIONS_DIR, TAGS_DIR, DATA_DIR]
     allowed_exts = (".csv", ".json", ".txt")
 
@@ -151,9 +179,11 @@ async def get_tag_file(request):
     except Exception:
         logger.info(f"Loaded {filename}")
 
+    # "no-cache" = always revalidate (ETag / Last-Modified -> cheap 304). A fixed
+    # max-age would keep serving the old list for up to an hour after an update.
     return web.FileResponse(file_path, headers={
         "Content-Type": "text/plain; charset=utf-8",
-        "Cache-Control": "public, max-age=3600"
+        "Cache-Control": "no-cache"
     })
 
 
